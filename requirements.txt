@@ -1,0 +1,9 @@
+streamlit
+requests
+numpy
+pandas
+scipy
+plotly
+networkx
+textstat
+scikit-learn
