@@ -693,8 +693,8 @@ def find_viral_new_channels_enhanced(api_key, niche_ideas_list, video_type="Any"
         return apply_advanced_ranking(viral_channels)
     return viral_channels
 
-def find_channels_with_criteria(api_key, search_params, results_container, enable_unlimited_split=False):
-    """Find YouTube channels based on user-defined criteria with unlimited pagination and optional yearly split to bypass API limits"""
+def find_channels_with_criteria(api_key, search_params, results_container, enable_unlimited_split=False, target_channels=float('inf')):
+    """Find YouTube channels based on user-defined criteria with unlimited pagination and optional yearly split to bypass API limits, stops when target reached"""
     
     keywords = search_params.get('keywords', '')
     channel_type = search_params.get('channel_type', 'Any')
@@ -720,6 +720,7 @@ def find_channels_with_criteria(api_key, search_params, results_container, enabl
     total_terms = len(search_terms)
     channels_found = 0
     total_queries = 0
+    search_complete = False
     
     # If unlimited split enabled and no specific creation year, split by years to get more results
     year_ranges = []
@@ -727,23 +728,27 @@ def find_channels_with_criteria(api_key, search_params, results_container, enabl
         current_year = datetime.now().year
         for y in range(2005, current_year + 1):
             year_ranges.append((y, y + 1))
-        st.info(f"🔄 Unlimited mode: Splitting search across {len(year_ranges)} years to bypass API limits (up to 500 results/year).")
+        st.info(f"🔄 Unlimited mode: Splitting search across {len(year_ranges)} years to bypass API limits (up to 500 results/year). Will stop at {target_channels} channels.")
     else:
         year_ranges = [(None, None)]  # Single query
     
     for term_idx, term in enumerate(search_terms):
+        if search_complete:
+            break
         for year_idx, (start_y, end_y) in enumerate(year_ranges):
+            if search_complete:
+                break
             total_queries += 1
             page_token = None
             page_count = 0
             
-            while True:
-                status_text.text(f"🔍 Term: '{term}' | Year: {start_y if start_y else 'All'} | Page: {page_count + 1} | Channels: {channels_found}")
+            while not search_complete:
+                status_text.text(f"🔍 Term: '{term}' | Year: {start_y if start_y else 'All'} | Page: {page_count + 1} | Channels: {channels_found}/{target_channels}")
                 
                 # Progress: rough estimate based on terms * years * pages
                 estimated_total = total_terms * len(year_ranges) * 10  # Assume 10 pages max per query
-                progress = (total_queries * 10 + page_count) / estimated_total
-                progress_bar.progress(min(progress, 1.0))
+                progress = min((total_queries * 10 + page_count) / estimated_total, 1.0)
+                progress_bar.progress(progress)
                 
                 search_query_params = {
                     "part": "snippet",
@@ -793,6 +798,8 @@ def find_channels_with_criteria(api_key, search_params, results_container, enabl
                     break
                 
                 for batch_start in range(0, len(channel_ids), 50):
+                    if search_complete:
+                        break
                     batch_ids = channel_ids[batch_start:batch_start + 50]
                     
                     channel_params = {
@@ -804,6 +811,8 @@ def find_channels_with_criteria(api_key, search_params, results_container, enabl
                         continue
                     
                     for channel in channel_response["items"]:
+                        if search_complete:
+                            break
                         try:
                             snippet = channel.get("snippet", {})
                             stats = channel.get("statistics", {})
@@ -890,6 +899,13 @@ def find_channels_with_criteria(api_key, search_params, results_container, enabl
                                         st.text_area("📝 Description:", channel_data['Description'], height=80, key=f"desc_finder_inc_{channels_found}_{term_idx}_{year_idx}")
                                     
                                     st.markdown(f"[🔗 Visit Channel]({channel_data['URL']})")
+                            
+                            # Check if target reached
+                            if channels_found >= target_channels:
+                                search_complete = True
+                                progress_bar.empty()
+                                status_text.empty()
+                                return found_channels
                         except (ValueError, KeyError) as e:
                             continue
                 
@@ -1060,11 +1076,11 @@ with st.sidebar:
     # Search limits
     st.subheader("🔢 Search Limits")
     default_max_results = st.slider(
-        "Suggested Max Channels (for guidance):",
+        "Target Channels (stops when reached):",
         min_value=10,
-        max_value=200,
-        value=50,
-        help="This is now unlimited; use for reference only."
+        max_value=1000,
+        value=100,
+        help="Search continues across pages/years until this many channels found or exhausted."
     )
     
     # API usage tracking
@@ -1132,7 +1148,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     <div style="color: #888; font-size: 0.8em;">
-        <p>YouTube Analytics Platform v2.2 (Truly Unlimited)<br>
+        <p>YouTube Analytics Platform v2.3 (Target-Based Loop)<br>
         Built with Streamlit & YouTube Data API v3<br>
         Last Updated: September 2025</p>
     </div>
@@ -1341,7 +1357,7 @@ with tab1:
 
 # Tab 2: Channel Finder
 with tab2:
-    st.header("🎯 Truly Unlimited Channel Discovery & Search")
+    st.header("🎯 Truly Unlimited Channel Discovery & Search (Target-Based)")
     
     st.markdown("""
     <div class="question-box">
@@ -1458,6 +1474,7 @@ with tab2:
                 'keywords': keywords,
                 'channel_type': channel_type,
                 'creation_year': creation_year if creation_year > 0 else None,
+                'target_channels': default_max_results,
                 'description_keyword': description_keyword,
                 'min_subscribers': min_subscribers,
                 'max_subscribers': max_subscribers,
@@ -1468,10 +1485,11 @@ with tab2:
                 'country': COUNTRY_CODES[country]
             }
             
-            with st.spinner("🔍 Starting truly unlimited search... Results appear live. (May take time with split mode)"):
+            with st.spinner(f"🔍 Starting truly unlimited search for {default_max_results} channels... Results appear live. (May take time with split mode)"):
                 channels = find_channels_with_criteria(
                     api_key, search_params, results_container, 
-                    enable_unlimited_split and (creation_year == 0)
+                    enable_unlimited_split and (creation_year == 0),
+                    default_max_results
                 )
             
             if channels:
@@ -1481,7 +1499,7 @@ with tab2:
                 
                 st.session_state.channel_finder_results = channels
                 with results_container:
-                    st.success(f"🎉 Truly unlimited discovery complete! Found {len(channels)} channels (across all years/pages until exhausted).")
+                    st.success(f"🎉 Discovery complete! Found {len(channels)} channels (target: {default_max_results}, stopped when reached or exhausted).")
                     
                     preview_df = pd.DataFrame(channels)
                     st.dataframe(
@@ -1771,6 +1789,7 @@ with col1:
         • Use specific, relevant keywords
         • Combine multiple related terms with commas
         • Set creation year to 0 + enable split for truly unlimited results
+        • Set target channels high to loop until complete
         • Adjust subscriber limits to find your target audience size
         • Use description keywords to filter by niche topics
         • Monitor API quota—split mode uses more calls
@@ -1815,7 +1834,7 @@ with col3:
         - 10,000 requests per day (free tier)
         - Each search uses ~3-5 quota units
         - Split mode: ~50x more calls for full history
-        - Be cautious with unlimited!
+        - Target loop: Continues until reached or quota hit
         
         **Cost:** Free up to daily quota limit
         """)
@@ -1824,12 +1843,12 @@ with col3:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 20px;">
-    <h4>🚀 Complete YouTube Analytics Platform (Truly Unlimited Edition)</h4>
+    <h4>🚀 Complete YouTube Analytics Platform (Target Loop Edition)</h4>
     <p>This comprehensive platform combines intelligent niche research, advanced channel discovery, 
     and viral video detection. It uses mathematical models and machine learning algorithms to 
     provide deep insights into YouTube ecosystem dynamics.</p>
     <br>
-    <p><strong>✨ Features:</strong> Niche Research • Truly Unlimited Channel Discovery (Yearly Split) • Viral Video Detection • Advanced Analytics</p>
+    <p><strong>✨ Features:</strong> Niche Research • Truly Unlimited Channel Discovery (Yearly Split + Target Loop) • Viral Video Detection • Advanced Analytics</p>
     <p><em>Powered by YouTube Data API v3, advanced mathematical models, and AI-driven intelligence</em></p>
 </div>
 """, unsafe_allow_html=True)
