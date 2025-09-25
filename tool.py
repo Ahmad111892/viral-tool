@@ -694,12 +694,12 @@ def find_viral_new_channels_enhanced(api_key, niche_ideas_list, video_type="Any"
     return viral_channels
 
 def find_channels_with_criteria(api_key, search_params, results_container):
-    """Find YouTube channels based on user-defined criteria with pagination"""
+    """Find YouTube channels based on user-defined criteria with unlimited pagination"""
     
     keywords = search_params.get('keywords', '')
     channel_type = search_params.get('channel_type', 'Any')
     creation_year = search_params.get('creation_year', None)
-    max_channels = search_params.get('max_channels', 50)
+    # Removed max_channels limit for unlimited search
     
     description_keyword = search_params.get('description_keyword', '')
     min_subscribers = search_params.get('min_subscribers', 0)
@@ -720,14 +720,15 @@ def find_channels_with_criteria(api_key, search_params, results_container):
     
     total_terms = len(search_terms)
     channels_found = 0
+    page_count_total = 0  # Track total pages for progress
     
     for term_idx, term in enumerate(search_terms):
         page_token = None
         page_count = 0
         
         while True:
-            status_text.text(f"🔍 Searching for: '{term}' (Page {page_count + 1}, {channels_found}/{max_channels} channels)")
-            progress_bar.progress(min((term_idx + 1) / total_terms, 1.0))
+            status_text.text(f"🔍 Searching for: '{term}' (Page {page_count + 1}, {channels_found} channels found so far)")
+            progress_bar.progress(min((term_idx + page_count / 100) / total_terms, 1.0))  # Rough progress based on pages
             
             search_query_params = {
                 "part": "snippet",
@@ -864,25 +865,14 @@ def find_channels_with_criteria(api_key, search_params, results_container):
                                     st.text_area("📝 Description:", channel_data['Description'], height=80, key=f"desc_finder_inc_{channels_found}_{term_idx}")
                                 
                                 st.markdown(f"[🔗 Visit Channel]({channel_data['URL']})")
-                        
-                        if channels_found >= max_channels:
-                            break
                     except (ValueError, KeyError) as e:
                         continue
-                
-                if channels_found >= max_channels:
-                    break
-            
-            if channels_found >= max_channels:
-                break
             
             page_token = search_response.get('nextPageToken')
             page_count += 1
+            page_count_total += 1
             if not page_token:
                 break
-        
-        if channels_found >= max_channels:
-            break
     
     progress_bar.empty()
     status_text.empty()
@@ -1046,11 +1036,11 @@ with st.sidebar:
     # Search limits
     st.subheader("🔢 Search Limits")
     default_max_results = st.slider(
-        "Default Max Channels:",
+        "Suggested Max Channels (for guidance):",
         min_value=10,
         max_value=200,
         value=50,
-        help="Default maximum channels to find"
+        help="This is now unlimited; use for reference only."
     )
     
     # API usage tracking
@@ -1087,7 +1077,7 @@ with st.sidebar:
         
         • **No results found**: Try broader keywords or adjust filters
         • **API errors**: Check your API key and quota limits
-        • **Slow searches**: Reduce max channels or use basic mode
+        • **Slow searches**: Reduce scope or use basic mode (now unlimited, so monitor API usage)
         • **Missing data**: Some channels may have private statistics
         
         **Best Practices:**
@@ -1105,7 +1095,7 @@ with st.sidebar:
         1. **Refresh the page** - Clears temporary issues
         2. **Check API key** - Ensure it's valid and has quota
         3. **Clear cache** - Use the button above
-        4. **Reduce search scope** - Lower max channels
+        4. **Monitor API usage** - Unlimited search can hit quota fast
         5. **Try different keywords** - Some terms may be restricted
         
         **Error Codes:**
@@ -1118,7 +1108,7 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     <div style="color: #888; font-size: 0.8em;">
-        <p>YouTube Analytics Platform v2.1<br>
+        <p>YouTube Analytics Platform v2.1 (Unlimited Edition)<br>
         Built with Streamlit & YouTube Data API v3<br>
         Last Updated: September 2025</p>
     </div>
@@ -1327,7 +1317,7 @@ with tab1:
 
 # Tab 2: Channel Finder
 with tab2:
-    st.header("🎯 Channel Discovery & Search")
+    st.header("🎯 Unlimited Channel Discovery & Search")
     
     st.markdown("""
     <div class="question-box">
@@ -1359,12 +1349,12 @@ with tab2:
             help="Year when the channel was created"
         )
         
-        max_channels = st.number_input(
-            "🔢 How many channels to find? (e.g. 100):",
+        suggested_max = st.number_input(
+            "Suggested Max Channels (for guidance):",
             min_value=1,
-            max_value=500,
+            max_value=1000,
             value=default_max_results,
-            help="Maximum number of channels to discover"
+            help="Search is now unlimited; this is for reference. It will stop when no more results."
         )
     
     st.markdown("""
@@ -1436,7 +1426,7 @@ with tab2:
 
     results_container = st.container()
 
-    if st.button("🚀 Start Channel Discovery", type="primary", use_container_width=True):
+    if st.button("🚀 Start Unlimited Channel Discovery", type="primary", use_container_width=True):
         if not api_key:
             st.error("🔐 Please configure your YouTube API key in the sidebar first!")
         elif not keywords:
@@ -1446,7 +1436,7 @@ with tab2:
                 'keywords': keywords,
                 'channel_type': channel_type,
                 'creation_year': creation_year,
-                'max_channels': max_channels,
+                # No max_channels passed for unlimited
                 'description_keyword': description_keyword,
                 'min_subscribers': min_subscribers,
                 'max_subscribers': max_subscribers,
@@ -1457,7 +1447,7 @@ with tab2:
                 'country': COUNTRY_CODES[country]
             }
             
-            with st.spinner("🔍 Searching for channels..."):
+            with st.spinner("🔍 Starting unlimited search... Results will appear live as found."):
                 channels = find_channels_with_criteria(api_key, search_params, results_container)
             
             if channels:
@@ -1467,7 +1457,7 @@ with tab2:
                 
                 st.session_state.channel_finder_results = channels
                 with results_container:
-                    st.success(f"🎉 Discovery complete! Found {len(channels)} channels matching your criteria.")
+                    st.success(f"🎉 Unlimited discovery complete! Found {len(channels)} channels matching your criteria (stopped when no more pages).")
                     
                     preview_df = pd.DataFrame(channels)
                     st.dataframe(
@@ -1758,6 +1748,7 @@ with col1:
         • Try different year ranges to find emerging channels
         • Adjust subscriber limits to find your target audience size
         • Use description keywords to filter by niche topics
+        • For unlimited search, monitor API quota in sidebar
         
         **Examples:**
         - "AI tutorial, machine learning, python coding"
@@ -1798,6 +1789,7 @@ with col3:
         - 10,000 requests per day (free tier)
         - Each search uses ~3-5 quota units
         - Channel details use ~1 quota unit
+        - Unlimited search: Be cautious with quota!
         
         **Cost:** Free up to daily quota limit
         """)
@@ -1806,12 +1798,12 @@ with col3:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #666; padding: 20px;">
-    <h4>🚀 Complete YouTube Analytics Platform</h4>
+    <h4>🚀 Complete YouTube Analytics Platform (Unlimited Edition)</h4>
     <p>This comprehensive platform combines intelligent niche research, advanced channel discovery, 
     and viral video detection. It uses mathematical models and machine learning algorithms to 
     provide deep insights into YouTube ecosystem dynamics.</p>
     <br>
-    <p><strong>✨ Features:</strong> Niche Research • Channel Discovery • Viral Video Detection • Advanced Analytics</p>
+    <p><strong>✨ Features:</strong> Niche Research • Unlimited Channel Discovery • Viral Video Detection • Advanced Analytics</p>
     <p><em>Powered by YouTube Data API v3, advanced mathematical models, and AI-driven intelligence</em></p>
 </div>
 """, unsafe_allow_html=True)
